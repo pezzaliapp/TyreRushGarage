@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="description" content="TyreRush Garage - PWA arcade dell'officina gommista. Smonta, equilibra, gonfia e assetta il prima possibile!" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TyreRush" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./css/styles.css" />
+  <title>TyreRush Garage</title>
+</head>
+<body>
+  <!-- Splash di caricamento iniziale -->
+  <div id="splash" class="screen splash">
+    <div class="logo">
+      <div class="tyre">
+        <div class="rim"></div>
+      </div>
+      <h1>TyreRush <span>Garage</span></h1>
+      <p class="tagline">Officina arcade · PWA</p>
+    </div>
+    <div class="loader"></div>
+  </div>
+
+  <!-- Menu principale -->
+  <div id="menu" class="screen hidden">
+    <header class="topbar">
+      <div class="brand">TyreRush <span>Garage</span></div>
+      <div class="stats-top">
+        <span class="coin">💰 <b id="topCoins">0</b></span>
+        <span class="lvl">⭐ <b id="topLevel">1</b></span>
+      </div>
+    </header>
+
+    <section class="menu-content">
+      <h2 class="title-pulse">Scegli la modalità</h2>
+      <div class="modes">
+        <button class="mode-card" data-mode="arcade">
+          <span class="emoji">🏁</span>
+          <span class="mode-title">Arcade</span>
+          <span class="mode-desc">3 vite · score infinito</span>
+        </button>
+        <button class="mode-card" data-mode="career">
+          <span class="emoji">🛠️</span>
+          <span class="mode-title">Carriera</span>
+          <span class="mode-desc">Livelli e progressione</span>
+        </button>
+        <button class="mode-card" data-mode="infinite">
+          <span class="emoji">♾️</span>
+          <span class="mode-title">Infinite Garage</span>
+          <span class="mode-desc">Auto a raffica</span>
+        </button>
+      </div>
+
+      <div class="menu-actions">
+        <button id="btnAchievements" class="btn-ghost">🏆 Obiettivi</button>
+        <button id="btnSettings" class="btn-ghost">⚙️ Opzioni</button>
+        <button id="btnInstall" class="btn-ghost hidden">📲 Installa</button>
+      </div>
+
+      <p class="footer-note">Punteggio massimo: <b id="bestScore">0</b></p>
+    </section>
+  </div>
+
+  <!-- Schermata di gioco -->
+  <div id="game" class="screen hidden">
+    <header class="game-hud">
+      <button id="btnBack" class="hud-btn">⬅</button>
+      <div class="hud-info">
+        <div class="hud-row">
+          <span>⏱ <b id="timer">30</b>s</span>
+          <span>💰 <b id="score">0</b></span>
+          <span>❤️ <b id="lives">3</b></span>
+        </div>
+        <div class="hud-row small">
+          <span>Auto: <b id="carCount">1</b></span>
+          <span>Combo x<b id="combo">1</b></span>
+        </div>
+      </div>
+      <button id="btnPause" class="hud-btn">⏸</button>
+    </header>
+
+    <div class="stage-wrapper">
+      <div id="miniGameLabel" class="mini-label">Smontagomme</div>
+      <canvas id="stage" width="800" height="1200"></canvas>
+      <div id="instructions" class="instructions"></div>
+    </div>
+
+    <div id="touchControls" class="touch-controls"></div>
+  </div>
+
+  <!-- Schermata pausa / fine partita -->
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2 id="overlayTitle">Pausa</h2>
+      <div id="overlayBody" class="overlay-body"></div>
+      <div class="overlay-actions">
+        <button id="overlayResume" class="btn-primary">Riprendi</button>
+        <button id="overlayRestart" class="btn-secondary">Ricomincia</button>
+        <button id="overlayQuit" class="btn-ghost">Esci al menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schermata achievements -->
+  <div id="achievementsScreen" class="screen hidden">
+    <header class="topbar">
+      <button id="btnAchBack" class="hud-btn">⬅</button>
+      <div class="brand">🏆 Obiettivi</div>
+      <div></div>
+    </header>
+    <section class="ach-list" id="achList"></section>
+  </div>
+
+  <!-- Schermata settings -->
+  <div id="settingsScreen" class="screen hidden">
+    <header class="topbar">
+      <button id="btnSetBack" class="hud-btn">⬅</button>
+      <div class="brand">⚙️ Opzioni</div>
+      <div></div>
+    </header>
+    <section class="settings-list">
+      <label class="set-row">
+        <span>🔊 Audio</span>
+        <input type="checkbox" id="setAudio" checked />
+      </label>
+      <label class="set-row">
+        <span>📳 Vibrazione</span>
+        <input type="checkbox" id="setHaptic" checked />
+      </label>
+      <label class="set-row">
+        <span>🎨 Effetti</span>
+        <input type="checkbox" id="setFX" checked />
+      </label>
+      <button id="btnReset" class="btn-danger">🗑 Reset progressi</button>
+      <p class="footer-note">v1.0.0 · made with ❤️ by pezzaliAPP</p>
+    </section>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Script -->
+  <script src="./js/storage.js"></script>
+  <script src="./js/audio.js"></script>
+  <script src="./js/achievements.js"></script>
+  <script src="./js/games/smontagomme.js"></script>
+  <script src="./js/games/equilibratura.js"></script>
+  <script src="./js/games/gonfiaggio.js"></script>
+  <script src="./js/games/assetto.js"></script>
+  <script src="./js/main.js"></script>
+</body>
+</html>
