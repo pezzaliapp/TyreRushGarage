@@ -3,7 +3,7 @@
    Cache-first per asset statici, network-first per index.html
    ============================================================ */
 
-const CACHE = 'tyrerush-v1.0.0';
+const CACHE = 'tyrerush-v2.0.0';
 const ASSETS = [
   './',
   './index.html',
@@ -12,11 +12,15 @@ const ASSETS = [
   './js/main.js',
   './js/storage.js',
   './js/audio.js',
+  './js/fx.js',
+  './js/customers.js',
+  './js/events.js',
   './js/achievements.js',
   './js/games/smontagomme.js',
   './js/games/equilibratura.js',
   './js/games/gonfiaggio.js',
   './js/games/assetto.js',
+  './js/games/bosstruck.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -1,12 +1,12 @@
 /* ============================================================
-   gonfiaggio.js - mini-game: gonfiare alla pressione corretta
-   Gameplay: hold-to-pump. Una lancetta sale velocemente.
-   Rilascia nella zona verde target (es. 2.2 bar). Troppo poco
-   o troppo alto = errore.
+   gonfiaggio.js V2 - hold to pump. Rilascia nella zona verde.
+   FX completi + variante SABOTAGGIO: gomma sgonfia all'arrivo
+   con valore residuo casuale (sembra che parta da 0 e invece no!).
    ============================================================ */
 
 const GonfiaggioGame = (() => {
   let canvas, ctx, state, onComplete, onFail, onProgress;
+  let onPointerExtra = null;
 
   const PRESSURE_MAX = 4.0;
 
@@ -15,13 +15,14 @@ const GonfiaggioGame = (() => {
     onComplete = opts.onComplete || (() => {});
     onFail = opts.onFail || (() => {});
     onProgress = opts.onProgress || (() => {});
+    onPointerExtra = opts.onPointerExtra || null;
 
     const diff = opts.difficulty || 1;
-    const target = 1.8 + Math.random() * 1.0; // tra 1.8 e 2.8 bar
+    const target = 1.8 + Math.random() * 1.0;
     const window = Math.max(0.15, 0.5 - diff * 0.04);
 
     state = {
-      pressure: 0,
+      pressure: opts.sabotage ? Math.random() * 1.2 + 0.6 : 0,
       pumping: false,
       target,
       window,
@@ -30,8 +31,8 @@ const GonfiaggioGame = (() => {
       required: 3,
       currentTry: 0,
       maxTries: 5,
-      shake: 0,
       flash: 0,
+      sabotage: opts.sabotage || false,
     };
 
     canvas.addEventListener('pointerdown', startPump);
@@ -39,7 +40,11 @@ const GonfiaggioGame = (() => {
     canvas.addEventListener('pointercancel', stopPump);
     canvas.addEventListener('pointerleave', stopPump);
 
-    setInstructions(`Premi a lungo per gonfiare · Target ${target.toFixed(1)} bar (±${window.toFixed(2)})`);
+    setInstructions(
+      state.sabotage
+        ? `⚠️ GOMMA SGONFIA! Inizia da ${state.pressure.toFixed(1)} bar! Target ${target.toFixed(1)}`
+        : `Tieni premuto per gonfiare · Target ${target.toFixed(1)} bar`
+    );
   }
 
   function setInstructions(t) {
@@ -47,8 +52,14 @@ const GonfiaggioGame = (() => {
     if (el) el.textContent = t;
   }
 
-  function startPump() {
+  function startPump(e) {
     if (state.done) return;
+    if (onPointerExtra) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top)  * (canvas.height / rect.height);
+      if (onPointerExtra(x, y)) return;
+    }
     state.pumping = true;
     SFX.play('pump');
   }
@@ -59,9 +70,15 @@ const GonfiaggioGame = (() => {
     state.currentTry++;
 
     const diff = Math.abs(state.pressure - state.target);
+    const cx = canvas.width / 2, cy = canvas.height * 0.45;
+
     if (diff <= state.window) {
       state.success++;
-      state.flash = 1; // verde
+      state.flash = 1;
+      FX.spark(cx, cy, { color: '#2ecc71', count: 22, speed: 320 });
+      FX.popText(cx, cy - 80, 'PERFETTO!', { color: '#2ecc71', scale: 1.2 });
+      FX.screenShake(8);
+      FX.screenFlash('#2ecc71', 0.25);
       SFX.play('coin');
       SFX.haptic([10, 30, 10]);
       onProgress(state.success / state.required);
@@ -75,11 +92,11 @@ const GonfiaggioGame = (() => {
         }, 300);
         return;
       }
-      // sfiata e prossimo tentativo
       animateDeflate();
     } else {
-      state.shake = 10;
       state.flash = -1;
+      FX.hitBad(cx, cy);
+      FX.smoke(cx, cy, '180,40,40');
       SFX.play('hiss');
       SFX.haptic(80);
       onFail(false);
@@ -106,12 +123,8 @@ const GonfiaggioGame = (() => {
   function update(dt) {
     if (state.pumping && !state.done) {
       state.pressure = Math.min(PRESSURE_MAX, state.pressure + dt * 1.8);
-      if (state.pressure >= PRESSURE_MAX) {
-        // esplosione virtuale
-        stopPump();
-      }
+      if (state.pressure >= PRESSURE_MAX) stopPump();
     }
-    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 50);
     if (state.flash !== 0) {
       state.flash *= (1 - dt * 3);
       if (Math.abs(state.flash) < 0.05) state.flash = 0;
@@ -123,10 +136,6 @@ const GonfiaggioGame = (() => {
     const cx = W/2, cy = H * 0.45;
     const r = Math.min(W, H) * 0.32;
 
-    ctx.save();
-    if (state.shake) ctx.translate((Math.random()-.5)*state.shake, (Math.random()-.5)*state.shake);
-
-    // bg flash
     if (state.flash > 0) {
       ctx.fillStyle = `rgba(46,204,113,${state.flash * 0.3})`;
       ctx.fillRect(0, 0, W, H);
@@ -135,17 +144,14 @@ const GonfiaggioGame = (() => {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // pavimento
     ctx.fillStyle = '#11161c';
     ctx.fillRect(0, H*0.85, W, H*0.15);
 
-    // manometro corpo
     ctx.fillStyle = '#1a222c';
     ctx.beginPath();
     ctx.arc(cx, cy, r * 1.2, 0, Math.PI*2);
     ctx.fill();
 
-    // quadrante
     const dial = ctx.createRadialGradient(cx, cy, r*0.3, cx, cy, r);
     dial.addColorStop(0, '#f8f8f0');
     dial.addColorStop(1, '#d8d8d0');
@@ -154,7 +160,6 @@ const GonfiaggioGame = (() => {
     ctx.arc(cx, cy, r, 0, Math.PI*2);
     ctx.fill();
 
-    // arco zona verde
     const startA = Math.PI * 0.75;
     const endA   = Math.PI * 2.25;
     const fullA  = endA - startA;
@@ -167,7 +172,6 @@ const GonfiaggioGame = (() => {
     ctx.arc(cx, cy, r * 0.82, tStart, tEnd);
     ctx.stroke();
 
-    // tacche
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 2;
     ctx.fillStyle = '#222';
@@ -181,8 +185,7 @@ const GonfiaggioGame = (() => {
       const x2 = cx + Math.cos(a) * r * 0.82;
       const y2 = cy + Math.sin(a) * r * 0.82;
       ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
       ctx.stroke();
       if (i % 1 === 0) {
         const tx = cx + Math.cos(a) * r * 0.55;
@@ -191,7 +194,6 @@ const GonfiaggioGame = (() => {
       }
     }
 
-    // lancetta
     const a = startA + state.pressure / PRESSURE_MAX * fullA;
     ctx.save();
     ctx.translate(cx, cy);
@@ -209,7 +211,6 @@ const GonfiaggioGame = (() => {
     ctx.fill();
     ctx.restore();
 
-    // tubo + compressore
     ctx.strokeStyle = '#444';
     ctx.lineWidth = 8;
     ctx.beginPath();
@@ -219,16 +220,13 @@ const GonfiaggioGame = (() => {
     ctx.fillStyle = '#ff7a00';
     ctx.fillRect(W*0.05, H*0.88, W*0.2, H*0.08);
 
-    ctx.restore();
-
-    // testo HUD
     ctx.fillStyle = '#fff';
     ctx.font = `${Math.floor(W*0.04)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText(`${state.pressure.toFixed(2)} bar`, cx, H * 0.85);
     ctx.font = `${Math.floor(W*0.025)}px sans-serif`;
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`Gomme OK: ${state.success}/${state.required}   Tentativi: ${state.currentTry}/${state.maxTries}`, cx, H * 0.9);
+    ctx.fillText(`OK ${state.success}/${state.required}   Tentativi ${state.currentTry}/${state.maxTries}`, cx, H * 0.9);
   }
 
   function destroy() {

@@ -1,37 +1,39 @@
 /* ============================================================
-   equilibratura.js - mini-game: equilibrare la ruota
-   Gameplay: la ruota oscilla per uno sbilanciamento. Il giocatore
-   tocca la circonferenza per piazzare contrappesi nel punto
-   opposto allo squilibrio. Mira nel "settore verde" mobile.
+   equilibratura.js V2 - piazza i contrappesi sul settore verde.
+   FX completi + variante SABOTAGGIO: inversione del senso di
+   rotazione a metà partita.
    ============================================================ */
 
 const EquilibraturaGame = (() => {
   let canvas, ctx, state, onComplete, onFail, onProgress;
+  let onPointerExtra = null;
 
   function init(_canvas, _ctx, opts = {}) {
     canvas = _canvas; ctx = _ctx;
     onComplete = opts.onComplete || (() => {});
     onFail = opts.onFail || (() => {});
     onProgress = opts.onProgress || (() => {});
+    onPointerExtra = opts.onPointerExtra || null;
 
     const diff = opts.difficulty || 1;
     state = {
       angle: 0,
-      speed: 1 + diff * 0.2,            // velocità rotazione
+      speed: 1.2 + diff * 0.22,
       imbalance: Math.random() * Math.PI * 2,
-      targetWindow: 0.35 - Math.min(0.2, diff * 0.02), // più stretto se difficile
+      targetWindow: Math.max(0.18, 0.4 - diff * 0.02),
       placed: 0,
       required: 3,
       misses: 0,
-      maxMisses: 2,
+      maxMisses: 3,
       done: false,
-      shake: 0,
       pulse: 0,
+      sabotage: opts.sabotage || false,
+      direction: 1,
+      flipped: false,
     };
 
     canvas.addEventListener('pointerdown', handlePointer);
-
-    setInstructions('Tocca il settore verde per piazzare i pesi 🔧');
+    setInstructions(state.sabotage ? 'ATTENZIONE: la ruota può INVERTIRE! 🔄' : 'Tocca il settore verde per piazzare i pesi 🔧');
   }
 
   function setInstructions(t) {
@@ -47,30 +49,45 @@ const EquilibraturaGame = (() => {
     const x = (e.clientX - rect.left) * sx;
     const y = (e.clientY - rect.top) * sy;
 
+    if (onPointerExtra && onPointerExtra(x, y)) return;
+
     const cx = canvas.width / 2, cy = canvas.height / 2;
     const ang = Math.atan2(y - cy, x - cx);
     const dist = Math.hypot(x - cx, y - cy);
     const r = Math.min(canvas.width, canvas.height) * 0.3;
 
-    if (dist < r * 0.7 || dist > r * 1.2) return; // fuori cerchione
+    if (dist < r * 0.7 || dist > r * 1.2) return;
 
-    // posizione corrente del target (opposto allo squilibrio + offset rotante)
-    const targetAng = state.imbalance + Math.PI + state.angle;
+    const targetAng = state.imbalance + Math.PI + state.angle * state.direction;
     const diff = angDiff(ang, targetAng);
 
     if (Math.abs(diff) < state.targetWindow / 2) {
       state.placed++;
       state.pulse = 1;
+      FX.spark(x, y, { color: '#2ecc71', count: 20, speed: 320 });
+      FX.popText(x, y - 30, '+1 PESO', { color: '#2ecc71', scale: 1.0 });
+      FX.screenShake(6);
+      FX.screenFlash('#2ecc71', 0.2);
       SFX.play('coin');
       SFX.haptic(30);
       onProgress(state.placed / state.required);
 
-      // ricalcola squilibrio (più piccolo)
       state.imbalance = Math.random() * Math.PI * 2;
-      state.speed = Math.max(0.3, state.speed * 0.7);
+      state.speed = Math.max(0.4, state.speed * 0.78);
+
+      if (state.sabotage && !state.flipped && state.placed === Math.ceil(state.required / 2)) {
+        state.direction *= -1;
+        state.flipped = true;
+        FX.popText(canvas.width/2, canvas.height/2, '⚠️ INVERTITA!', { color: '#e74c3c', scale: 1.4 });
+        FX.screenFlash('#e74c3c', 0.4);
+        FX.screenShake(12);
+        SFX.play('hiss');
+        SFX.haptic([20, 80, 20]);
+      }
 
       if (state.placed >= state.required) {
         state.done = true;
+        FX.smoke(cx, cy);
         setTimeout(() => {
           SFX.play('good');
           SFX.haptic([20, 50, 20]);
@@ -79,12 +96,12 @@ const EquilibraturaGame = (() => {
       }
     } else {
       state.misses++;
-      state.shake = 10;
+      FX.hitBad(x, y);
       SFX.play('bad');
       SFX.haptic(60);
       if (state.misses >= state.maxMisses) {
         state.done = true;
-        setTimeout(() => onFail(true), 200); // fail definitivo
+        setTimeout(() => onFail(true), 200);
       } else {
         onFail(false);
       }
@@ -100,7 +117,6 @@ const EquilibraturaGame = (() => {
 
   function update(dt) {
     if (!state.done) state.angle += state.speed * dt;
-    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 50);
     if (state.pulse > 0) state.pulse = Math.max(0, state.pulse - dt * 2);
   }
 
@@ -109,29 +125,21 @@ const EquilibraturaGame = (() => {
     const cx = W/2, cy = H/2;
     const r = Math.min(W, H) * 0.3;
 
-    ctx.save();
-    if (state.shake) ctx.translate((Math.random()-.5)*state.shake, (Math.random()-.5)*state.shake);
-
-    // sfondo
     ctx.fillStyle = '#0b0d10';
     ctx.fillRect(0, 0, W, H);
 
-    // base macchina equilibratrice
     ctx.fillStyle = '#1a222c';
     ctx.fillRect(W*0.15, H*0.78, W*0.7, H*0.12);
     ctx.fillStyle = '#11161c';
     ctx.fillRect(W*0.4, H*0.55, W*0.2, H*0.25);
 
-    // ruota
     ctx.save();
     ctx.translate(cx, cy);
 
-    // pneumatico
     ctx.fillStyle = '#0a0a0a';
     ctx.beginPath();
     ctx.arc(0, 0, r * 1.2, 0, Math.PI*2);
     ctx.fill();
-    // cerchio
     const g = ctx.createRadialGradient(0, 0, r*0.3, 0, 0, r);
     g.addColorStop(0, '#c8ccd2');
     g.addColorStop(1, '#3a4250');
@@ -140,8 +148,7 @@ const EquilibraturaGame = (() => {
     ctx.arc(0, 0, r, 0, Math.PI*2);
     ctx.fill();
 
-    // razze rotanti
-    ctx.rotate(state.angle);
+    ctx.rotate(state.angle * state.direction);
     ctx.strokeStyle = '#2a2f37';
     ctx.lineWidth = r * 0.12;
     for (let i = 0; i < 5; i++) {
@@ -151,13 +158,11 @@ const EquilibraturaGame = (() => {
       ctx.lineTo(Math.cos(a)*r*0.85, Math.sin(a)*r*0.85);
       ctx.stroke();
     }
-    // hub
     ctx.fillStyle = '#1a1a1a';
     ctx.beginPath();
     ctx.arc(0, 0, r*0.18, 0, Math.PI*2);
     ctx.fill();
 
-    // indicatore squilibrio (rosso)
     ctx.save();
     ctx.rotate(state.imbalance);
     ctx.fillStyle = '#e74c3c';
@@ -168,37 +173,32 @@ const EquilibraturaGame = (() => {
 
     ctx.restore();
 
-    // settore target verde
-    const targetAng = state.imbalance + Math.PI + state.angle;
+    const targetAng = state.imbalance + Math.PI + state.angle * state.direction;
     const half = state.targetWindow / 2;
     ctx.save();
     ctx.translate(cx, cy);
     const pulse = 1 + state.pulse * 0.4;
     ctx.strokeStyle = `rgba(46,204,113,${0.6 + state.pulse*0.4})`;
-    ctx.lineWidth = 14 * pulse;
+    ctx.lineWidth = 16 * pulse;
     ctx.beginPath();
     ctx.arc(0, 0, r * 1.1, targetAng - half, targetAng + half);
     ctx.stroke();
     ctx.restore();
 
-    // pesi piazzati
     for (let i = 0; i < state.placed; i++) {
       ctx.fillStyle = '#ffb000';
       const a = (i / state.required) * Math.PI * 2;
       const px = cx + Math.cos(a) * r * 1.15;
       const py = cy + Math.sin(a) * r * 1.15;
       ctx.beginPath();
-      ctx.arc(px, py, 8, 0, Math.PI*2);
+      ctx.arc(px, py, 10, 0, Math.PI*2);
       ctx.fill();
     }
 
-    ctx.restore();
-
-    // indicatore vita
     ctx.fillStyle = '#fff';
     ctx.font = `${Math.floor(W*0.025)}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(`Pesi: ${state.placed}/${state.required}   Errori: ${state.misses}/${state.maxMisses}`, cx, H * 0.96);
+    ctx.fillText(`Pesi ${state.placed}/${state.required}   Err ${state.misses}/${state.maxMisses}`, cx, H * 0.96);
   }
 
   function destroy() {

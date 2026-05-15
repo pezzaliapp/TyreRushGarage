@@ -1,12 +1,16 @@
 /* ============================================================
-   audio.js - Web Audio API per SFX procedurali
-   Niente file esterni: tutto generato al volo (zero dipendenze)
+   audio.js - Web Audio API, SFX procedurali + LAYERED INTENSITY.
+   Niente file esterni. Tutto generato. Suono che cambia col combo,
+   con la pazienza, con i boss. Heartbeat quando il giocatore suda.
    ============================================================ */
 
 const SFX = (() => {
   let ctx = null;
   let masterGain = null;
   let muted = false;
+  let heartbeatInterval = null;
+  let drumInterval = null;
+  let comboLevel = 0;
 
   function init() {
     if (ctx) return;
@@ -26,23 +30,26 @@ const SFX = (() => {
     if (masterGain) masterGain.gain.value = v ? 0 : 0.4;
   }
 
-  function tone({ freq = 440, dur = 0.1, type = 'sine', vol = 0.5, slide = 0 }) {
+  function tone({ freq = 440, dur = 0.1, type = 'sine', vol = 0.5, slide = 0, delay = 0, attack = 0.005 }) {
     if (!ctx || muted) return;
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    const t0 = ctx.currentTime + delay;
+    osc.frequency.setValueAtTime(freq, t0);
     if (slide) {
-      osc.frequency.exponentialRampToValueAtTime(freq + slide, ctx.currentTime + dur);
+      const dest = Math.max(20, freq + slide);
+      osc.frequency.exponentialRampToValueAtTime(dest, t0 + dur);
     }
-    g.gain.setValueAtTime(vol, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(g); g.connect(masterGain);
-    osc.start();
-    osc.stop(ctx.currentTime + dur);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
   }
 
-  function noise({ dur = 0.15, vol = 0.3, freq = 1000 }) {
+  function noise({ dur = 0.15, vol = 0.3, freq = 1000, q = 1 }) {
     if (!ctx || muted) return;
     const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -52,6 +59,7 @@ const SFX = (() => {
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
     filter.frequency.value = freq;
+    filter.Q.value = q;
     const g = ctx.createGain();
     g.gain.setValueAtTime(vol, ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
@@ -60,37 +68,159 @@ const SFX = (() => {
     src.stop(ctx.currentTime + dur);
   }
 
-  // ===== SFX preconfezionati =====
+  /* ===== SFX preconfezionati ===== */
   const sfx = {
     click: () => tone({ freq: 800, dur: 0.05, type: 'square', vol: 0.2 }),
-    good:  () => { tone({ freq: 660, dur: 0.08, type: 'triangle', vol: 0.4 }); setTimeout(()=>tone({ freq: 880, dur: 0.1, type: 'triangle', vol: 0.4 }), 60); },
-    bad:   () => { tone({ freq: 200, dur: 0.2, type: 'sawtooth', vol: 0.4, slide: -100 }); },
-    coin:  () => { tone({ freq: 1200, dur: 0.06, type: 'square', vol: 0.3 }); setTimeout(()=>tone({ freq: 1800, dur: 0.08, type: 'square', vol: 0.3 }), 50); },
-    bolt:  () => noise({ dur: 0.18, vol: 0.25, freq: 1400 }),  // svitamento
-    pump:  () => noise({ dur: 0.1, vol: 0.2, freq: 600 }),     // gonfiaggio
-    hiss:  () => noise({ dur: 0.3, vol: 0.15, freq: 3000 }),   // aria
-    win:   () => {
-      [0, 0.08, 0.16].forEach((t,i) => {
-        setTimeout(() => tone({ freq: 523 + i*200, dur: 0.15, type: 'triangle', vol: 0.4 }), t*1000);
+
+    good: () => {
+      tone({ freq: 660, dur: 0.08, type: 'triangle', vol: 0.4 });
+      tone({ freq: 880, dur: 0.1, type: 'triangle', vol: 0.4, delay: 0.06 });
+      // armonico extra se combo alto
+      if (comboLevel >= 3) tone({ freq: 1320, dur: 0.12, type: 'triangle', vol: 0.3, delay: 0.12 });
+    },
+
+    bad: () => tone({ freq: 200, dur: 0.2, type: 'sawtooth', vol: 0.4, slide: -120 }),
+
+    coin: () => {
+      tone({ freq: 1200, dur: 0.06, type: 'square', vol: 0.3 });
+      tone({ freq: 1800, dur: 0.08, type: 'square', vol: 0.3, delay: 0.05 });
+    },
+
+    bolt: () => {
+      noise({ dur: 0.16, vol: 0.22, freq: 1400 });
+      tone({ freq: 1500 + comboLevel * 80, dur: 0.08, type: 'square', vol: 0.15 });
+    },
+
+    pump: () => noise({ dur: 0.1, vol: 0.18, freq: 600 }),
+    hiss: () => noise({ dur: 0.35, vol: 0.18, freq: 3200 }),
+
+    win: () => {
+      [0, 0.08, 0.16].forEach((t, i) => {
+        setTimeout(() => tone({ freq: 523 + i * 200, dur: 0.15, type: 'triangle', vol: 0.4 }), t * 1000);
       });
     },
-    lose:  () => {
-      [0, 0.1, 0.2].forEach((t,i) => {
-        setTimeout(() => tone({ freq: 400 - i*80, dur: 0.18, type: 'sawtooth', vol: 0.4 }), t*1000);
+
+    lose: () => {
+      [0, 0.1, 0.2].forEach((t, i) => {
+        setTimeout(() => tone({ freq: 400 - i * 80, dur: 0.18, type: 'sawtooth', vol: 0.4 }), t * 1000);
       });
     },
+
     level: () => {
-      [523, 659, 784, 1047].forEach((f, i) => {
-        setTimeout(() => tone({ freq: f, dur: 0.12, type: 'triangle', vol: 0.45 }), i*100);
+      [523, 659, 784, 1047, 1319].forEach((f, i) => {
+        setTimeout(() => tone({ freq: f, dur: 0.12, type: 'triangle', vol: 0.45 }), i * 90);
       });
+    },
+
+    /* === NUOVI: pressione + boss + combo === */
+    klaxon: () => {
+      // KLAXON brass per arrivo BOSS
+      [0, 0.18, 0.36].forEach(t => {
+        tone({ freq: 196, dur: 0.18, type: 'sawtooth', vol: 0.45, delay: t });
+        tone({ freq: 392, dur: 0.18, type: 'sawtooth', vol: 0.35, delay: t });
+      });
+    },
+
+    boss_win: () => {
+      // fanfara di vittoria boss
+      const notes = [523, 659, 784, 1047, 784, 1047, 1319, 1568];
+      notes.forEach((f, i) => {
+        setTimeout(() => {
+          tone({ freq: f, dur: 0.15, type: 'triangle', vol: 0.5 });
+          tone({ freq: f / 2, dur: 0.15, type: 'sawtooth', vol: 0.25 });
+        }, i * 80);
+      });
+    },
+
+    cat: () => {
+      // miagolio
+      tone({ freq: 660, dur: 0.12, type: 'sine', vol: 0.3, slide: 200 });
+      tone({ freq: 880, dur: 0.18, type: 'sine', vol: 0.25, delay: 0.12, slide: -300 });
+    },
+
+    blackout: () => {
+      // bzzzt → silenzio
+      tone({ freq: 110, dur: 0.3, type: 'sawtooth', vol: 0.4, slide: -90 });
+      noise({ dur: 0.4, vol: 0.2, freq: 200 });
+    },
+
+    customer_in: () => {
+      // campanellino "ding-dong" porta officina
+      tone({ freq: 988, dur: 0.18, type: 'sine', vol: 0.3 });
+      tone({ freq: 784, dur: 0.22, type: 'sine', vol: 0.3, delay: 0.18 });
+    },
+
+    customer_happy: () => {
+      tone({ freq: 880, dur: 0.1, type: 'triangle', vol: 0.35 });
+      tone({ freq: 1320, dur: 0.12, type: 'triangle', vol: 0.35, delay: 0.08 });
+    },
+
+    customer_angry: () => {
+      tone({ freq: 130, dur: 0.25, type: 'sawtooth', vol: 0.4 });
+      tone({ freq: 110, dur: 0.3, type: 'sawtooth', vol: 0.35, delay: 0.1 });
+    },
+
+    combo_up: (level) => {
+      const f = 440 + level * 60;
+      tone({ freq: f, dur: 0.08, type: 'triangle', vol: 0.4 });
+      tone({ freq: f * 1.5, dur: 0.1, type: 'triangle', vol: 0.3, delay: 0.05 });
+    },
+
+    slowmo_in: () => {
+      // whoosh discendente
+      tone({ freq: 800, dur: 0.4, type: 'sine', vol: 0.3, slide: -500 });
     },
   };
 
-  function play(name) {
+  function play(name, ...args) {
     if (muted) return;
     if (!ctx) init();
     if (ctx && ctx.state === 'suspended') ctx.resume();
-    if (sfx[name]) sfx[name]();
+    if (sfx[name]) sfx[name](...args);
+  }
+
+  /* ===== Layered intensity ===== */
+  function setComboLevel(level) {
+    comboLevel = level;
+  }
+
+  function startHeartbeat() {
+    if (heartbeatInterval) return;
+    let bpm = 80;
+    const tick = () => {
+      if (!ctx || muted) return;
+      tone({ freq: 60, dur: 0.08, type: 'sine', vol: 0.5 });
+      tone({ freq: 50, dur: 0.06, type: 'sine', vol: 0.4, delay: 0.12 });
+    };
+    tick();
+    heartbeatInterval = setInterval(tick, 60000 / bpm);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  }
+
+  function setHeartbeatBPM(bpm) {
+    if (!heartbeatInterval) return;
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (!ctx || muted) return;
+      tone({ freq: 60, dur: 0.08, type: 'sine', vol: 0.5 });
+      tone({ freq: 50, dur: 0.06, type: 'sine', vol: 0.4, delay: 0.12 });
+    }, 60000 / bpm);
+  }
+
+  function startDrumLoop(speed = 1) {
+    if (drumInterval) return;
+    const tick = () => {
+      noise({ dur: 0.05, vol: 0.18, freq: 200, q: 2 });
+    };
+    tick();
+    drumInterval = setInterval(tick, 250 / speed);
+  }
+
+  function stopDrumLoop() {
+    if (drumInterval) { clearInterval(drumInterval); drumInterval = null; }
   }
 
   function haptic(pattern = 30) {
@@ -98,5 +228,14 @@ const SFX = (() => {
     if (navigator.vibrate) navigator.vibrate(pattern);
   }
 
-  return { init, play, setMuted, haptic };
+  function stopAll() {
+    stopHeartbeat();
+    stopDrumLoop();
+  }
+
+  return {
+    init, play, setMuted, haptic, setComboLevel,
+    startHeartbeat, stopHeartbeat, setHeartbeatBPM,
+    startDrumLoop, stopDrumLoop, stopAll,
+  };
 })();

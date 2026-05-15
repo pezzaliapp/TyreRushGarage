@@ -88,6 +88,15 @@
 
     <div class="stage-wrapper">
       <div id="miniGameLabel" class="mini-label">Smontagomme</div>
+      <!-- Customer card: faccia + speech bubble + mancia -->
+      <div id="customerCard" class="customer-card hidden">
+        <canvas id="customerPortrait" width="80" height="80"></canvas>
+        <div class="customer-info">
+          <div class="customer-name" id="customerName">Bruno Tamarro</div>
+          <div class="customer-bubble" id="customerBubble">"Aoh, fai veloce!"</div>
+        </div>
+        <div class="customer-tip" id="customerTip">💰 x1.6</div>
+      </div>
       <canvas id="stage" width="800" height="1200"></canvas>
       <div id="instructions" class="instructions"></div>
     </div>
@@ -146,14 +155,18 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Script -->
+  <!-- Script (V2: FX, customers, events, bosstruck) -->
   <script src="./js/storage.js"></script>
   <script src="./js/audio.js"></script>
+  <script src="./js/fx.js"></script>
+  <script src="./js/customers.js"></script>
+  <script src="./js/events.js"></script>
   <script src="./js/achievements.js"></script>
   <script src="./js/games/smontagomme.js"></script>
   <script src="./js/games/equilibratura.js"></script>
   <script src="./js/games/gonfiaggio.js"></script>
   <script src="./js/games/assetto.js"></script>
+  <script src="./js/games/bosstruck.js"></script>
   <script src="./js/main.js"></script>
 </body>
 </html>

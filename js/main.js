@@ -1,38 +1,46 @@
 /* ============================================================
-   main.js - orchestratore di gioco
+   main.js V2 - orchestratore CUSTOMER-CENTRIC.
    ------------------------------------------------------------
-   - State machine: splash → menu → game → overlay
-   - 3 modalità: arcade, career, infinite
-   - Sequenza per "auto": smontagomme → equilibratura → gonfiaggio → assetto
-   - Loop a 60fps via requestAnimationFrame
-   - Resize canvas con DPR
-   - PWA install prompt
+   Flow:
+     menu -> game (customer queue)
+       arriva cliente con personalità + frase
+       1 mini-game (random) con eventuale sabotaggio
+       patience timer (vignette rosso se < 30%, heartbeat audio)
+       eventi random (gatto, blackout, compressore)
+       ogni 8 clienti: BOSS TRUCK
+       combo escala con juice crescente
    ============================================================ */
 
 (() => {
-  // ===== State =====
+
   const App = {
     screen: 'splash',
-    mode: null,                 // arcade / career / infinite
-    canvas: null,
-    ctx: null,
-    raf: null,
-    lastT: 0,
+    mode: null,
+    canvas: null, ctx: null,
+    raf: null, lastT: 0,
     paused: false,
 
-    // round state
-    currentGame: null,          // module corrente
-    currentGameName: '',
-    miniIndex: 0,
-    miniSequence: ['smontagomme', 'equilibratura', 'gonfiaggio', 'assetto'],
-    carCount: 0,
-    livesLeft: 3,
     score: 0,
     combo: 1,
-    perfectRun: true,
-    timeLeft: 30,
-    timer: null,
+    livesLeft: 3,
+    customerNumber: 0,
+    bossesDefeated: 0,
+    runStart: 0,
+    runDuration: 0,
     difficulty: 1,
+    perfectRun: true,
+
+    customer: null,
+    customerStartedAt: 0,
+    serving: false,
+
+    currentGame: null,
+    currentGameName: '',
+    miniSequence: ['smontagomme', 'equilibratura', 'gonfiaggio', 'assetto'],
+
+    inBoss: false,
+    bossInterval: 8,
+    heartbeatActive: false,
   };
 
   const Modules = {
@@ -40,6 +48,7 @@
     equilibratura: EquilibraturaGame,
     gonfiaggio: GonfiaggioGame,
     assetto: AssettoGame,
+    bosstruck: BossTruckGame,
   };
 
   const LABELS = {
@@ -47,23 +56,17 @@
     equilibratura: 'Equilibratura',
     gonfiaggio: 'Gonfiaggio',
     assetto: 'Assetto',
+    bosstruck: '🚚 BOSS TRUCK',
   };
 
-  // ===== Riferimenti DOM =====
   const $ = (id) => document.getElementById(id);
 
-  // ===== Splash → Menu =====
-  function bootSplash() {
-    setTimeout(() => {
-      showScreen('menu');
-      refreshMenu();
-    }, 1100);
-  }
+  /* ============================ Screens ============================ */
+  function bootSplash() { setTimeout(() => { showScreen('menu'); refreshMenu(); }, 1100); }
 
   function showScreen(name) {
     ['splash', 'menu', 'game', 'achievementsScreen', 'settingsScreen'].forEach(id => {
-      const el = $(id);
-      if (!el) return;
+      const el = $(id); if (!el) return;
       el.classList.toggle('hidden', id !== name);
     });
     App.screen = name;
@@ -75,37 +78,42 @@
     $('bestScore').textContent = Storage.get('bestScore');
   }
 
-  // ===== Avvio modalità =====
+  /* ============================ Mode start ============================ */
   function startMode(mode) {
     App.mode = mode;
-    App.miniIndex = 0;
-    App.carCount = 0;
     App.score = 0;
     App.combo = 1;
+    App.customerNumber = 0;
+    App.bossesDefeated = 0;
     App.perfectRun = true;
-    App.livesLeft = mode === 'arcade' ? 3 : (mode === 'career' ? 1 : 5);
+    App.livesLeft = mode === 'arcade' ? 3 : (mode === 'career' ? 2 : 5);
     App.difficulty = mode === 'career' ? Storage.get('level') : 1;
-
-    if (mode === 'arcade' || mode === 'infinite') {
-      App.timeLeft = mode === 'arcade' ? 60 : 999;
-    } else {
-      App.timeLeft = 90;
-    }
+    App.runStart = performance.now();
+    App.runDuration = mode === 'arcade' ? 60 : (mode === 'career' ? 90 : 9999);
 
     showScreen('game');
     setupCanvas();
-    startMini();
-    startTimer();
-    updateHUD();
+    spawnCustomer();
+    loop(performance.now());
   }
 
-  // ===== Canvas + DPR + resize =====
+  /* ============================ Canvas ============================ */
   function setupCanvas() {
     App.canvas = $('stage');
     App.ctx = App.canvas.getContext('2d');
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('orientationchange', resizeCanvas);
+    FX.init(App.canvas, App.ctx);
+    Events.init(App.canvas, App.ctx, {
+      onCatStolen: () => {},
+      onCatRecovered: () => {
+        App.score += 100;
+        FX.bigPopup('+100 GATTO BANDITO!', '#ffb000', 1.6);
+      },
+      onBlackoutStart: () => {},
+      onBlackoutEnd: () => {},
+    });
   }
 
   function resizeCanvas() {
@@ -120,95 +128,250 @@
     App.canvas.style.height = h + 'px';
   }
 
-  // ===== Mini-game lifecycle =====
-  function startMini() {
-    const name = App.miniSequence[App.miniIndex];
+  /* ============================ Customer queue ============================ */
+  function spawnCustomer() {
+    App.customerNumber++;
+    if (App.customerNumber > 1 && (App.customerNumber - 1) % App.bossInterval === 0) {
+      startBoss();
+      return;
+    }
+
+    const c = Customers.pick(App.difficulty);
+    App.customer = c;
+    App.customerStartedAt = performance.now();
+    App.serving = false;
+
+    renderCustomerCard(c);
+    setMiniLabel(`Cliente #${App.customerNumber}`);
+    SFX.play('customer_in');
+
+    setTimeout(() => {
+      if (App.customer === c && !App.serving && !App.inBoss) startServing();
+    }, 2200);
+  }
+
+  function renderCustomerCard(c) {
+    const card = $('customerCard');
+    const bubble = $('customerBubble');
+    const portrait = $('customerPortrait');
+    const nameEl = $('customerName');
+    const tipEl = $('customerTip');
+    if (!card) return;
+    card.classList.remove('hidden');
+    nameEl.textContent = c.name;
+    bubble.textContent = `"${c.hello}"`;
+    tipEl.textContent = `💰 x${c.tipMult.toFixed(1)}`;
+    tipEl.style.color = c.tipMult >= 2 ? '#ffb000' : (c.tipMult >= 1.4 ? '#2ecc71' : '#94a3b8');
+    const pctx = portrait.getContext('2d');
+    portrait.width = 80; portrait.height = 80;
+    pctx.clearRect(0,0,80,80);
+    Customers.drawFace(pctx, 40, 40, 75, c);
+  }
+
+  function startServing() {
+    App.serving = true;
+    const pick = App.miniSequence[Math.floor(Math.random() * App.miniSequence.length)];
+    startMini(pick, { sabotage: Math.random() < App.customer.sabotageRate });
+  }
+
+  function startMini(name, opts = {}) {
     App.currentGameName = name;
     App.currentGame = Modules[name];
-    $('miniGameLabel').textContent = LABELS[name];
+    setMiniLabel(LABELS[name] + (opts.sabotage ? ' ⚠️' : ''));
 
     App.currentGame.init(App.canvas, App.ctx, {
       difficulty: App.difficulty,
+      sabotage: opts.sabotage,
+      onPointerExtra: (x, y) => Events.handlePointer(x, y),
       onComplete: handleMiniComplete,
       onFail: handleMiniFail,
       onProgress: () => {},
     });
-
-    if (!App.raf) loop(performance.now());
   }
 
+  /* ============================ Boss flow ============================ */
+  function startBoss() {
+    App.inBoss = true;
+    App.serving = true;
+    App.customer = {
+      name: 'Capo del Truck',
+      face: '🚛',
+      patience: 50,
+      tipMult: 5.0,
+      baseTip: 1000,
+      hello: 'BAMBINI, ARRIVO IO!! 45 SECONDI O TI RIBALTO L\'OFFICINA!',
+      win: 'BRAVO! Sei un PILOTA della gomma!',
+      lose: 'PFFF, dilettante!',
+      skin: '#cd9f7a', hair: '#1a1a1a', clothes: '#ff7a00',
+      sabotageRate: 0,
+    };
+    App.customerStartedAt = performance.now();
+    renderCustomerCard(App.customer);
+    setMiniLabel('🚚 BOSS TRUCK INCOMING!');
+    SFX.play('klaxon');
+    SFX.startDrumLoop(2.0);
+    setTimeout(() => { startMini('bosstruck', {}); }, 800);
+  }
+
+  function endBoss(win) {
+    App.inBoss = false;
+    App.bossesDefeated += win ? 1 : 0;
+    SFX.stopDrumLoop();
+    if (win) {
+      App.score += 5000;
+      Storage.set('coins', Storage.get('coins') + 500);
+      FX.bigPopup('BOSS DEFEATED! +5000', '#ffb000', 2.6);
+      FX.confetti();
+      FX.rainbow(2.5);
+      SFX.play('boss_win');
+    }
+    updateHUD();
+    setTimeout(spawnCustomer, 1800);
+  }
+
+  /* ============================ Mini-game callbacks ============================ */
   function handleMiniComplete() {
-    // bonus tempo + combo
-    const baseScore = 100;
-    const timeBonus = Math.floor(App.timeLeft) * 2;
-    const comboBonus = baseScore * (App.combo - 1) * 0.5;
-    const total = Math.floor(baseScore + timeBonus + comboBonus);
+    if (!App.currentGame) return;
+    App.currentGame.destroy();
+
+    if (App.currentGameName === 'bosstruck') {
+      endBoss(true);
+      return;
+    }
+
+    const c = App.customer;
+    const elapsed = (performance.now() - App.customerStartedAt) / 1000;
+    const tipTimeBonus = Math.max(0.5, (c.patience - elapsed) / c.patience);
+    const baseTip = c.baseTip;
+    const tipScale = c.tipMult * (0.7 + tipTimeBonus * 0.6);
+    const comboScale = 1 + (App.combo - 1) * 0.3;
+    const total = Math.floor(baseTip * tipScale * comboScale);
 
     App.score += total;
     App.combo = Math.min(10, App.combo + 1);
+    SFX.setComboLevel(App.combo);
     Storage.setMax('maxCombo', App.combo);
 
-    showToast(`+${total} 💰 · combo x${App.combo}`);
-    updateHUD();
+    FX.bigPopup(`+${total}  "${c.win}"`, '#2ecc71', 1.4);
+    FX.setComboGlow(Math.min(1, App.combo / 8));
+    SFX.play('customer_happy');
+    SFX.haptic([15, 40, 15]);
+    SFX.play('combo_up', App.combo);
 
-    // avanza al prossimo mini-game
-    App.currentGame.destroy();
-    App.miniIndex++;
-
-    if (App.miniIndex >= App.miniSequence.length) {
-      // auto completata!
-      App.carCount++;
-      App.miniIndex = 0;
-      Storage.bumpStat('carsCompleted', 1);
-      Storage.bumpStat('tiresChanged', 4);
-      if (App.perfectRun) Storage.bumpStat('perfectGames', 1);
-
-      // bonus auto
-      App.score += 500;
-      showToast(`🚗 Auto consegnata! +500`);
-
-      // progressione: in career, salire di livello ogni N auto
-      if (App.mode === 'career') {
-        if (App.carCount >= 3) {
-          finishRound(true);
-          return;
-        }
-      }
-
-      // tempo extra in arcade/infinite
-      if (App.mode === 'arcade') App.timeLeft += 15;
-      App.difficulty += 0.5;
+    if (App.combo >= 3) {
+      FX.popText(App.canvas.width/2, App.canvas.height*0.3, `COMBO x${App.combo}!`, {
+        color: App.combo >= 8 ? '#ec4899' : (App.combo >= 5 ? '#ffb000' : '#ff7a00'),
+        scale: 1.2 + App.combo * 0.06, life: 1.4,
+      });
     }
 
-    setTimeout(startMini, 600);
+    Storage.bumpStat('tiresChanged', 4);
+    Storage.bumpStat('carsCompleted', 1);
+
+    App.customer = null;
+    hideCustomerCard();
+    updateHUD();
+
+    Events.maybeTrigger(App.combo, App.difficulty);
+    App.difficulty += 0.15;
+
+    setTimeout(spawnCustomer, 900);
   }
 
   function handleMiniFail(hard = false) {
     App.combo = 1;
+    SFX.setComboLevel(1);
+    FX.setComboGlow(0);
     App.perfectRun = false;
     if (hard) {
       App.livesLeft--;
-      updateHUD();
-      if (App.livesLeft <= 0) {
-        finishRound(false);
-        return;
+      if (App.customer) {
+        FX.popText(App.canvas.width/2, App.canvas.height*0.3, `"${App.customer.lose}"`, {
+          color: '#e74c3c', scale: 1.2, life: 1.8,
+        });
+        SFX.play('customer_angry');
       }
-      // riavvia stesso mini-game
-      App.currentGame.destroy();
-      setTimeout(startMini, 400);
-    } else {
+      SFX.haptic([60, 30, 60]);
+      hideCustomerCard();
       updateHUD();
+      if (App.currentGame) App.currentGame.destroy();
+      if (App.livesLeft <= 0) { finishRound(false); return; }
+      setTimeout(spawnCustomer, 1500);
     }
   }
 
-  // ===== Round end =====
+  /* ============================ HUD ============================ */
+  function setMiniLabel(text) {
+    const el = $('miniGameLabel'); if (el) el.textContent = text;
+  }
+  function hideCustomerCard() { const el = $('customerCard'); if (el) el.classList.add('hidden'); }
+
+  function updateHUD() {
+    $('score').textContent = App.score;
+    $('lives').textContent = App.livesLeft;
+    $('combo').textContent = App.combo;
+    $('carCount').textContent = App.customerNumber;
+    const tEl = $('timer');
+    if (App.mode === 'infinite') tEl.textContent = '∞';
+    else tEl.textContent = Math.max(0, Math.floor(App.runDuration - (performance.now() - App.runStart)/1000));
+  }
+
+  /* ============================ Game loop ============================ */
+  function loop(now) {
+    const dt = Math.min(0.05, (now - App.lastT) / 1000 || 0.016);
+    App.lastT = now;
+
+    if (!App.paused) {
+      if (App.mode !== 'infinite' && App.customer && App.serving) {
+        const remaining = App.runDuration - (performance.now() - App.runStart) / 1000;
+        if (remaining <= 0) { finishRound(true); return; }
+      }
+
+      if (App.customer && App.serving && !App.inBoss) {
+        const elapsed = (performance.now() - App.customerStartedAt) / 1000;
+        const ratio = 1 - elapsed / App.customer.patience;
+        if (ratio < 0.35 && !App.heartbeatActive) {
+          SFX.startHeartbeat(); App.heartbeatActive = true;
+        } else if (ratio >= 0.5 && App.heartbeatActive) {
+          SFX.stopHeartbeat(); App.heartbeatActive = false;
+        }
+        if (App.heartbeatActive) SFX.setHeartbeatBPM(80 + (1 - ratio) * 80);
+        FX.setVignette(Math.max(0, 0.5 - ratio));
+        if (ratio <= 0) handleMiniFail(true);
+      } else {
+        FX.setVignette(0);
+      }
+
+      FX.update(dt);
+      Events.update(dt);
+
+      const ts = FX.timeScale();
+      if (App.currentGame) {
+        FX.beginTransform();
+        App.currentGame.update(dt * ts);
+        App.currentGame.draw();
+        FX.endTransform();
+      }
+
+      Events.draw();
+      FX.drawOverlay();
+
+      if ((now | 0) % 4 === 0) updateHUD();
+    }
+
+    App.raf = requestAnimationFrame(loop);
+  }
+
+  /* ============================ Finish ============================ */
   function finishRound(win) {
-    if (App.timer) clearInterval(App.timer);
+    SFX.stopAll();
+    App.heartbeatActive = false;
     if (App.currentGame) App.currentGame.destroy();
     if (App.raf) cancelAnimationFrame(App.raf);
     App.raf = null;
+    App.currentGame = null;
+    FX.reset();
 
-    // coin = score / 10
     const coinsEarned = Math.floor(App.score / 10);
     Storage.update({
       coins: Storage.get('coins') + coinsEarned,
@@ -216,7 +379,7 @@
     });
     Storage.bumpStat('totalGames', 1);
 
-    if (App.mode === 'career' && win) {
+    if (App.mode === 'career' && App.score >= 2000) {
       Storage.set('level', Storage.get('level') + 1);
       Storage.set('careerProgress', Storage.get('careerProgress') + 1);
       SFX.play('level');
@@ -224,59 +387,41 @@
       win ? SFX.play('win') : SFX.play('lose');
     }
 
-    // achievements
+    if (App.perfectRun) Storage.bumpStat('perfectGames', 1);
+
     const newAch = Achievements.checkAll();
     newAch.forEach(a => showToast(`🏆 ${a.title}`));
 
     showOverlay({
-      title: win ? '🏁 Vittoria!' : '💥 Game Over',
+      title: win ? '🏁 Turno chiuso!' : '💥 Fine giornata',
       bodyHtml: `
         <p>Score: <b>${App.score}</b></p>
-        <p>Auto consegnate: <b>${App.carCount}</b></p>
+        <p>Clienti serviti: <b>${App.customerNumber - (App.inBoss ? 1 : 0)}</b></p>
+        <p>Boss truck battuti: <b>${App.bossesDefeated}</b></p>
         <p>Coin guadagnati: <b>+${coinsEarned}</b></p>
-        ${win && App.mode === 'career' ? `<p>🆙 Livello ${Storage.get('level')}!</p>` : ''}
+        ${App.combo >= 5 ? `<p>🔥 Combo MAX: <b>x${App.combo}</b></p>` : ''}
       `,
-      resumeText: 'Continua',
-      onResume: () => { hideOverlay(); showScreen('menu'); refreshMenu(); },
-      hideRestart: false,
+      resumeText: 'Ancora!',
+      onResume: () => { hideOverlay(); startMode(App.mode); },
+      hideRestart: true,
     });
   }
 
-  // ===== Timer principale =====
-  function startTimer() {
-    if (App.timer) clearInterval(App.timer);
-    if (App.mode === 'infinite') return; // no timer
-    App.timer = setInterval(() => {
-      if (App.paused) return;
-      App.timeLeft--;
-      updateHUD();
-      if (App.timeLeft <= 0) {
-        finishRound(App.mode === 'arcade' ? true : false);
-      }
-    }, 1000);
+  function quitToMenu() {
+    SFX.stopAll();
+    App.heartbeatActive = false;
+    if (App.currentGame) App.currentGame.destroy();
+    if (App.raf) cancelAnimationFrame(App.raf);
+    App.raf = null;
+    App.currentGame = null;
+    App.paused = false;
+    FX.reset();
+    hideCustomerCard();
+    showScreen('menu');
+    refreshMenu();
   }
 
-  // ===== HUD =====
-  function updateHUD() {
-    $('timer').textContent = App.mode === 'infinite' ? '∞' : Math.max(0, App.timeLeft);
-    $('score').textContent = App.score;
-    $('lives').textContent = App.livesLeft;
-    $('carCount').textContent = App.carCount;
-    $('combo').textContent = App.combo;
-  }
-
-  // ===== Game loop =====
-  function loop(now) {
-    const dt = Math.min(0.05, (now - App.lastT) / 1000 || 0.016);
-    App.lastT = now;
-    if (!App.paused && App.currentGame) {
-      App.currentGame.update(dt);
-      App.currentGame.draw();
-    }
-    App.raf = requestAnimationFrame(loop);
-  }
-
-  // ===== Overlay (pausa / fine) =====
+  /* ============================ Overlay ============================ */
   function showOverlay({ title, bodyHtml, onResume, resumeText='Riprendi', hideRestart=true }) {
     $('overlayTitle').textContent = title;
     $('overlayBody').innerHTML = bodyHtml;
@@ -287,31 +432,20 @@
     $('overlayRestart').onclick = () => { hideOverlay(); startMode(App.mode); };
     $('overlayQuit').onclick = () => { hideOverlay(); quitToMenu(); };
   }
-
   function hideOverlay() { $('overlay').classList.add('hidden'); }
 
   function pauseGame() {
     if (App.paused) return;
     App.paused = true;
+    SFX.stopAll();
     showOverlay({
       title: '⏸ Pausa',
       bodyHtml: `<p>Score corrente: <b>${App.score}</b></p>`,
       onResume: () => { App.paused = false; hideOverlay(); },
+      hideRestart: false,
     });
   }
 
-  function quitToMenu() {
-    if (App.timer) clearInterval(App.timer);
-    if (App.currentGame) App.currentGame.destroy();
-    if (App.raf) cancelAnimationFrame(App.raf);
-    App.raf = null;
-    App.currentGame = null;
-    App.paused = false;
-    showScreen('menu');
-    refreshMenu();
-  }
-
-  // ===== Toast =====
   let toastTimer = null;
   function showToast(text) {
     const t = $('toast');
@@ -321,7 +455,7 @@
     toastTimer = setTimeout(() => t.classList.add('hidden'), 1600);
   }
 
-  // ===== Achievements UI =====
+  /* ============================ Achievements UI ============================ */
   function renderAchievements() {
     const list = $('achList');
     list.innerHTML = '';
@@ -341,67 +475,35 @@
     });
   }
 
-  // ===== Settings UI =====
+  /* ============================ Settings UI ============================ */
   function bindSettings() {
     const s = Storage.get('settings');
     $('setAudio').checked = s.audio;
     $('setHaptic').checked = s.haptic;
     $('setFX').checked = s.fx;
-
-    $('setAudio').addEventListener('change', e => {
-      s.audio = e.target.checked;
-      Storage.set('settings', s);
-      SFX.setMuted(!s.audio);
-    });
-    $('setHaptic').addEventListener('change', e => {
-      s.haptic = e.target.checked;
-      Storage.set('settings', s);
-    });
-    $('setFX').addEventListener('change', e => {
-      s.fx = e.target.checked;
-      Storage.set('settings', s);
-    });
+    $('setAudio').addEventListener('change', e => { s.audio = e.target.checked; Storage.set('settings', s); SFX.setMuted(!s.audio); });
+    $('setHaptic').addEventListener('change', e => { s.haptic = e.target.checked; Storage.set('settings', s); });
+    $('setFX').addEventListener('change', e => { s.fx = e.target.checked; Storage.set('settings', s); });
     $('btnReset').addEventListener('click', () => {
-      if (confirm('Resettare TUTTI i progressi?')) {
-        Storage.reset();
-        refreshMenu();
-        showToast('Progressi azzerati');
-      }
+      if (confirm('Resettare TUTTI i progressi?')) { Storage.reset(); refreshMenu(); showToast('Progressi azzerati'); }
     });
   }
 
-  // ===== Event binding =====
+  /* ============================ Events binding ============================ */
   function bindEvents() {
     document.querySelectorAll('.mode-card').forEach(btn => {
-      btn.addEventListener('click', () => {
-        SFX.play('click');
-        startMode(btn.dataset.mode);
-      });
+      btn.addEventListener('click', () => { SFX.play('click'); startMode(btn.dataset.mode); });
     });
-
-    $('btnAchievements').addEventListener('click', () => {
-      SFX.play('click');
-      renderAchievements();
-      showScreen('achievementsScreen');
-    });
-    $('btnSettings').addEventListener('click', () => {
-      SFX.play('click');
-      showScreen('settingsScreen');
-    });
+    $('btnAchievements').addEventListener('click', () => { SFX.play('click'); renderAchievements(); showScreen('achievementsScreen'); });
+    $('btnSettings').addEventListener('click', () => { SFX.play('click'); showScreen('settingsScreen'); });
     $('btnAchBack').addEventListener('click', () => { SFX.play('click'); showScreen('menu'); });
     $('btnSetBack').addEventListener('click', () => { SFX.play('click'); showScreen('menu'); });
-
-    $('btnBack').addEventListener('click', () => {
-      if (confirm('Uscire dalla partita?')) quitToMenu();
-    });
+    $('btnBack').addEventListener('click', () => { if (confirm('Uscire dalla partita?')) quitToMenu(); });
     $('btnPause').addEventListener('click', pauseGame);
 
-    // PWA install
     let installPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      installPrompt = e;
-      $('btnInstall').classList.remove('hidden');
+      e.preventDefault(); installPrompt = e; $('btnInstall').classList.remove('hidden');
     });
     $('btnInstall').addEventListener('click', async () => {
       if (!installPrompt) return;
@@ -411,15 +513,11 @@
       $('btnInstall').classList.add('hidden');
     });
 
-    // pause when tab hidden
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && App.screen === 'game' && App.currentGame && !App.paused) {
-        pauseGame();
-      }
+      if (document.hidden && App.screen === 'game' && App.currentGame && !App.paused) pauseGame();
     });
   }
 
-  // ===== Service Worker =====
   function registerSW() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -428,11 +526,9 @@
     }
   }
 
-  // ===== Init =====
   function init() {
     SFX.init();
-    const audioMuted = !Storage.get('settings').audio;
-    SFX.setMuted(audioMuted);
+    SFX.setMuted(!Storage.get('settings').audio);
     bindEvents();
     bindSettings();
     registerSW();

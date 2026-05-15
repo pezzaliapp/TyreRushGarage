@@ -291,6 +291,65 @@ canvas#stage {
 @keyframes flashBad { 0%,100%{background-color:transparent} 50%{background-color:rgba(231,76,60,.3)} }
 @keyframes flashGood { 0%,100%{background-color:transparent} 50%{background-color:rgba(46,204,113,.3)} }
 
+/* ====== Customer card (V2) ====== */
+.customer-card {
+  position: absolute;
+  top: 50px; left: 8px; right: 8px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(26,34,44,.96), rgba(11,13,16,.96));
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  z-index: 3;
+  box-shadow: 0 6px 20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,176,0,.3) inset;
+  animation: customerEnter .3s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes customerEnter {
+  0% { transform: translateY(-20px) scale(.8); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.customer-card canvas {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 2px solid var(--accent);
+  flex-shrink: 0;
+}
+.customer-info {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.customer-name {
+  font-weight: 700; font-size: .95rem; color: var(--accent-2);
+  text-shadow: 0 1px 4px rgba(0,0,0,.8);
+}
+.customer-bubble {
+  font-size: .82rem; color: var(--text);
+  line-height: 1.25;
+  font-style: italic;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.customer-tip {
+  font-weight: 800; font-size: .95rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.5);
+  flex-shrink: 0;
+  animation: tipPulse 1.5s ease-in-out infinite;
+}
+@keyframes tipPulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* combo flame nei bordi (subtle, applicato via HUD) */
+.game-hud {
+  position: relative;
+}
+
 /* ====== Responsive ====== */
 @media (min-width: 600px) {
   .modes { flex-direction: row; flex-wrap: wrap; justify-content: center; }
