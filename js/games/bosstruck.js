@@ -16,19 +16,21 @@ const BossTruckGame = (() => {
     onBoltHit = opts.onBoltHit || (() => {});
 
     const W = canvas.width, H = canvas.height;
-    const totalWheels = 8;
+    const mega = !!opts.mega;                  // V3: variante MEGA TRUCK 12 ruote
+    const totalWheels = mega ? 12 : 8;
     const wheels = [];
-    // 4 ruote a sinistra + 4 a destra del truck stilizzato
-    const rowY = [H * 0.45, H * 0.72];
-    const cols = [W*0.15, W*0.38, W*0.62, W*0.85];
-    let idx = 0;
+    const colCount = mega ? 6 : 4;
+    const rowY = [H * 0.42, H * 0.70];
+    const cols = [];
+    for (let i = 0; i < colCount; i++) cols.push(W * (0.1 + 0.8 * (i / (colCount - 1))));
+    const wheelR = Math.min(W, H) * (mega ? 0.07 : 0.09);
     for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 4; c++) {
+      for (let c = 0; c < colCount; c++) {
         wheels.push({
           x: cols[c],
           y: rowY[r],
-          r: Math.min(W, H) * 0.09,
-          bolts: 4,
+          r: wheelR,
+          bolts: mega ? 5 : 4,
           loosened: 0,
           done: false,
           angle: 0,
@@ -37,11 +39,12 @@ const BossTruckGame = (() => {
     }
     state = {
       wheels,
+      mega,
       currentWheelIdx: 0,
-      totalBolts: totalWheels * 4,
+      totalBolts: wheels.reduce((s, w) => s + w.bolts, 0),
       hitBolts: 0,
       done: false,
-      introTime: 1.6, // banner SUPER TRUCK!
+      introTime: 1.6,
       bannerAlpha: 1,
       finishedAt: 0,
       shake: 0,
@@ -52,8 +55,8 @@ const BossTruckGame = (() => {
     setInstructions('🚚 SUPER TRUCK! Tap su tutti i bulloni!');
 
     SFX.play('klaxon');
-    FX.bigPopup('🚚 SUPER TRUCK!', '#ff7a00', 2.4);
-    FX.rainbow(2.0);
+    FX.bigPopup(mega ? '🏆 MEGA TRUCK!' : '🚚 SUPER TRUCK!', '#ff7a00', mega ? 2.8 : 2.4);
+    FX.rainbow(mega ? 2.6 : 2.0);
     FX.chromatic(1.2);
   }
 

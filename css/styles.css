@@ -350,6 +350,92 @@ canvas#stage {
   position: relative;
 }
 
+/* ====== V3: Level select ====== */
+.stars-counter { font-size: .9rem; font-weight: 700; }
+.level-list, .shop-list, .dex-list {
+  flex: 1; overflow-y: auto;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.level-card {
+  display: grid;
+  grid-template-columns: 36px 48px 1fr 56px;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: border-color .15s;
+}
+.level-card.locked { opacity: .5; filter: grayscale(.5); }
+.level-card:not(.locked):active { border-color: var(--accent); }
+.level-num { font-weight: 800; color: var(--accent-2); font-size: 1.1rem; text-align: center; }
+.level-emoji { font-size: 2rem; text-align: center; }
+.level-info { min-width: 0; }
+.level-name { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
+.level-desc { font-size: .8rem; color: var(--muted); line-height: 1.3; margin-bottom: 4px; }
+.level-stars { font-size: .85rem; }
+.level-play {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--accent); color: #000;
+  font-size: 1.2rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.level-play:disabled { background: var(--border); color: var(--muted); }
+.level-play:not(:disabled):active { transform: scale(.92); }
+
+/* ====== V3: Shop ====== */
+.shop-card {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.shop-card.owned { border-color: var(--good); background: rgba(46,204,113,.07); }
+.shop-card.expensive { opacity: .55; }
+.shop-icon { font-size: 2rem; text-align: center; }
+.shop-name { font-weight: 700; font-size: 1rem; }
+.shop-desc { font-size: .82rem; color: var(--muted); line-height: 1.3; margin-top: 2px; }
+.shop-buy {
+  padding: 8px 14px; border-radius: 99px;
+  background: var(--accent); color: #000;
+  font-weight: 800; font-size: .9rem;
+  min-width: 80px;
+}
+.shop-buy:disabled { background: var(--good); color: #fff; }
+.shop-card.expensive .shop-buy { background: var(--border); color: var(--muted); }
+
+/* ====== V3: Pokédex ====== */
+.dex-card {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.dex-card.unfound { opacity: .65; }
+.dex-card canvas {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 2px solid var(--border);
+}
+.dex-name { font-weight: 700; font-size: 1rem; }
+.dex-stat { font-size: .82rem; color: var(--accent-2); margin-top: 2px; }
+.dex-quote { font-size: .78rem; color: var(--muted); font-style: italic; margin-top: 4px; }
+
+.primary-mode { border-color: var(--accent) !important; box-shadow: 0 0 0 2px rgba(255,122,0,.25) inset, var(--shadow); }
+
 /* ====== Responsive ====== */
 @media (min-width: 600px) {
   .modes { flex-direction: row; flex-wrap: wrap; justify-content: center; }

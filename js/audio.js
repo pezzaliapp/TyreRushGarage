@@ -184,16 +184,20 @@ const SFX = (() => {
     comboLevel = level;
   }
 
+  // BUG FIX V3: l'intervallo veniva ricreato ad ogni frame da setHeartbeatBPM
+  // → non scadeva mai, heartbeat muto. Ora ricreiamo SOLO se delta BPM > 5.
+  let heartbeatBPM = 80;
+  const heartbeatTick = () => {
+    if (!ctx || muted) return;
+    tone({ freq: 60, dur: 0.08, type: 'sine', vol: 0.5 });
+    tone({ freq: 50, dur: 0.06, type: 'sine', vol: 0.4, delay: 0.12 });
+  };
+
   function startHeartbeat() {
     if (heartbeatInterval) return;
-    let bpm = 80;
-    const tick = () => {
-      if (!ctx || muted) return;
-      tone({ freq: 60, dur: 0.08, type: 'sine', vol: 0.5 });
-      tone({ freq: 50, dur: 0.06, type: 'sine', vol: 0.4, delay: 0.12 });
-    };
-    tick();
-    heartbeatInterval = setInterval(tick, 60000 / bpm);
+    heartbeatBPM = 80;
+    heartbeatTick();
+    heartbeatInterval = setInterval(heartbeatTick, 60000 / heartbeatBPM);
   }
 
   function stopHeartbeat() {
@@ -202,12 +206,11 @@ const SFX = (() => {
 
   function setHeartbeatBPM(bpm) {
     if (!heartbeatInterval) return;
+    // ricrea solo se delta >= 6 (evita kill-and-restart 60 volte al sec)
+    if (Math.abs(bpm - heartbeatBPM) < 6) return;
+    heartbeatBPM = bpm;
     clearInterval(heartbeatInterval);
-    heartbeatInterval = setInterval(() => {
-      if (!ctx || muted) return;
-      tone({ freq: 60, dur: 0.08, type: 'sine', vol: 0.5 });
-      tone({ freq: 50, dur: 0.06, type: 'sine', vol: 0.4, delay: 0.12 });
-    }, 60000 / bpm);
+    heartbeatInterval = setInterval(heartbeatTick, 60000 / bpm);
   }
 
   function startDrumLoop(speed = 1) {

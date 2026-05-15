@@ -41,24 +41,26 @@
     <section class="menu-content">
       <h2 class="title-pulse">Scegli la modalità</h2>
       <div class="modes">
+        <button class="mode-card primary-mode" id="btnCampaign">
+          <span class="emoji">🗺️</span>
+          <span class="mode-title">Campagna</span>
+          <span class="mode-desc">15 livelli unici · stelle da conquistare</span>
+        </button>
         <button class="mode-card" data-mode="arcade">
           <span class="emoji">🏁</span>
           <span class="mode-title">Arcade</span>
-          <span class="mode-desc">3 vite · score infinito</span>
-        </button>
-        <button class="mode-card" data-mode="career">
-          <span class="emoji">🛠️</span>
-          <span class="mode-title">Carriera</span>
-          <span class="mode-desc">Livelli e progressione</span>
+          <span class="mode-desc">3 vite · score infinito · 60 sec</span>
         </button>
         <button class="mode-card" data-mode="infinite">
           <span class="emoji">♾️</span>
           <span class="mode-title">Infinite Garage</span>
-          <span class="mode-desc">Auto a raffica</span>
+          <span class="mode-desc">Senza fine. Quanti riesci a servirne?</span>
         </button>
       </div>
 
       <div class="menu-actions">
+        <button id="btnShop" class="btn-ghost">🛒 Negozio</button>
+        <button id="btnPokedex" class="btn-ghost">📖 Galleria</button>
         <button id="btnAchievements" class="btn-ghost">🏆 Obiettivi</button>
         <button id="btnSettings" class="btn-ghost">⚙️ Opzioni</button>
         <button id="btnInstall" class="btn-ghost hidden">📲 Installa</button>
@@ -127,6 +129,36 @@
     <section class="ach-list" id="achList"></section>
   </div>
 
+  <!-- Schermata: Level Select (V3) -->
+  <div id="levelSelectScreen" class="screen hidden">
+    <header class="topbar">
+      <button id="btnLvlBack" class="hud-btn">⬅</button>
+      <div class="brand">🗺️ Campagna</div>
+      <div class="stars-counter">⭐ <b id="totalStars">0/45</b></div>
+    </header>
+    <section class="level-list" id="levelList"></section>
+  </div>
+
+  <!-- Schermata: Shop (V3) -->
+  <div id="shopScreen" class="screen hidden">
+    <header class="topbar">
+      <button id="btnShopBack" class="hud-btn">⬅</button>
+      <div class="brand">🛒 Negozio Officina</div>
+      <div class="stars-counter">💰 <b id="shopCoins">0</b></div>
+    </header>
+    <section class="shop-list" id="shopList"></section>
+  </div>
+
+  <!-- Schermata: Pokédex clienti (V3) -->
+  <div id="pokedexScreen" class="screen hidden">
+    <header class="topbar">
+      <button id="btnDexBack" class="hud-btn">⬅</button>
+      <div class="brand">📖 Galleria clienti</div>
+      <div class="stars-counter"><b id="dexCount">0/10</b></div>
+    </header>
+    <section class="dex-list" id="pokedexList"></section>
+  </div>
+
   <!-- Schermata settings -->
   <div id="settingsScreen" class="screen hidden">
     <header class="topbar">
@@ -155,18 +187,21 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Script (V2: FX, customers, events, bosstruck) -->
+  <!-- Script V3 (livelli, upgrade, manopump) -->
   <script src="./js/storage.js"></script>
   <script src="./js/audio.js"></script>
   <script src="./js/fx.js"></script>
   <script src="./js/customers.js"></script>
   <script src="./js/events.js"></script>
+  <script src="./js/levels.js"></script>
+  <script src="./js/upgrades.js"></script>
   <script src="./js/achievements.js"></script>
   <script src="./js/games/smontagomme.js"></script>
   <script src="./js/games/equilibratura.js"></script>
   <script src="./js/games/gonfiaggio.js"></script>
   <script src="./js/games/assetto.js"></script>
   <script src="./js/games/bosstruck.js"></script>
+  <script src="./js/games/manopump.js"></script>
   <script src="./js/main.js"></script>
 </body>
 </html>

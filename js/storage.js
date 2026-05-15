@@ -10,13 +10,20 @@ const Storage = (() => {
     bestScore: 0,
     level: 1,
     coins: 0,
+    totalEarned: 0,           // V3: coin cumulativi guadagnati (mai diminuisce)
     careerProgress: 0,
     unlockedAchievements: [],
+    levelStars: {},           // V3: { 1: 3, 2: 2, ... } stelle per livello
+    levelBest: {},            // V3: { 1: 1450, ... } score massimo per livello
+    ownedUpgrades: [],        // V3: id degli upgrade acquistati
+    metCustomers: [],         // V3: pokédex clienti incontrati
     stats: {
       totalGames: 0,
       perfectGames: 0,
       tiresChanged: 0,
       maxCombo: 1,
+      carsCompleted: 0,
+      bossesDefeated: 0,
     },
     settings: {
       audio: true,
